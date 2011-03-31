@@ -128,7 +128,7 @@ Strophe.Bosh = function(service)
 
     // default BOSH values
     this.hold = 1;
-    this.wait = 60;
+    this.wait = 3;
     this.window = 5;
 
 	// Connection
@@ -138,8 +138,8 @@ Strophe.Bosh = function(service)
 	this._requests = [];    
 	
     this._sendNextRequestTimeout = null;
-	this.connected = null
-    
+	this.connected = false
+	this.disconnecting = false
 };
 
 Strophe.Bosh.prototype = {
@@ -150,6 +150,7 @@ Strophe.Bosh.prototype = {
 	connect: function(connection) {
 		this.connection = connection;
 		this.connected = true
+		this.disconnecting = false
 		
 		body = this._buildBody();
 		body.attrs({
@@ -172,8 +173,19 @@ Strophe.Bosh.prototype = {
 	/** Function: reconnect 
 	 *  Re-initiliazes the server connection
 	 */
-	reconnect: function(connection) {
+	reconnect: function() {
 		
+	},
+	
+	/** Function: disconnect
+	 *  Disconnects from the Bosh server
+	 *
+	 */ 
+	disconnect: function() {
+		this.disconnecting = true
+		body = this._buildBody();
+		body.attrs({type: "terminate"});
+		this._requests.push(body);
 	},
 	
 	/** Function: send 
@@ -187,11 +199,6 @@ Strophe.Bosh.prototype = {
 		while(body.nodeTree != body.node) {
 			body.up()
 		}
-		if(stanza.nodeName == "presence" && stanza.getAttribute("type") == "unavailable") {
-			body.attrs({type: "terminate"});
-			this.connected = false;
-		}
-		
 		this._requests.push(body);
 	},
 	
@@ -222,7 +229,6 @@ Strophe.Bosh.prototype = {
 			body = this._buildBody()
 		}
 
-		
 		body.attrs({rid: this.rid++}); // Put the rid
 		
 		if (this.sid !== null) {
@@ -239,9 +245,9 @@ Strophe.Bosh.prototype = {
 			body.tree().getAttribute("rid")
 		);
 
-		// if(this.connected) {
+		if(this.connected) {
 			this._processRequest(request);
-		// }
+		}
     },
 
     _processRequest: function(req)
@@ -304,7 +310,7 @@ Strophe.Bosh.prototype = {
                 if (!this.connected) {
                     this.connection.changeConnectStatus(Strophe.Status.CONNFAIL, "bad-service");
                 }
-                this.disconnect();
+                this.connection._doDisconnect();
                 return;
             }
 
@@ -369,11 +375,14 @@ Strophe.Bosh.prototype = {
 
         var typ = elem.getAttribute("type");
         var cond, conflict;
-        if (typ !== null && typ == "terminate") {
+        if (this.disconnecting || (typ !== null && typ == "terminate")) {
             // Don't process stanzas that come in after disconnect
             if (this.connection.disconnecting) {
+				this.connection._doDisconnect()
                 return;
             }
+
+			this.sid = null;
 
             // an error occurred
             cond = elem.getAttribute("condition");
@@ -386,7 +395,7 @@ Strophe.Bosh.prototype = {
             } else {
                 this.connection.changeConnectStatus(Strophe.Status.CONNFAIL, "unknown");
             }
-            this.connection.disconnect();
+            // this.connection.disconnect();
             return;
         }
 		
@@ -409,6 +418,7 @@ Strophe.Bosh.prototype = {
         // send each incoming stanza back to the connection
         var that = this;
         Strophe.forEachChild(elem, null, function (child) {
+	
 			that.connection._dataRecv(child);
         });
    
@@ -489,8 +499,7 @@ Strophe.Bosh.prototype = {
                     reqStatus >= 12000) {
                     this._hitError(reqStatus);
                     if (reqStatus >= 400 && reqStatus < 500) {
-                        this.connection.changeConnectStatus(Strophe.Status.DISCONNECTING, null);
-                        this._doDisconnect();
+                        this.connection.disconnect();
                     }
                 }
             }
@@ -502,10 +511,10 @@ Strophe.Bosh.prototype = {
     },
 	
 	
-	/** PrivateFunction: _sendRestart
+	/** Function: restart
      *  Send an xmpp:restart stanza.
      */
-    _sendRestart: function () {
+    restart: function () {
 		body = this._buildBody();
 		body.attrs({
 			to: this.connection.domain, 
@@ -540,15 +549,15 @@ Strophe.Bosh.prototype = {
         }
 	},
 
-	/** PrivateFunction: _doDisconnect
-	*  _Private_ function to disconnect.
+	/** Function: finish
+	*   function to finish.
 	*
 	*  This is the last piece of the disconnection logic.  This resets the
 	*  connection and alerts the user's connection callback.
 	*/
-	_doDisconnect: function ()
+	finish: function ()
 	{
-		Strophe.info("_doDisconnect was called");
+		Strophe.info("bosh::finish was called");
 		this.connected = false;
 		this.sid = null;
 		this.streamId = null;

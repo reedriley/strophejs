@@ -1,4 +1,6 @@
 var BOSH_SERVICE = 'http://zipline.local:5280/http-bind'
+var WS_SERVICE = 'ws://zipline.local:5288/ws-xmpp'
+
 var connection = null;
 
 function log(msg) 
@@ -53,7 +55,7 @@ function onMessage(msg) {
 	var reply = $msg({to: from, type: 'chat'}).cnode(Strophe.copyElement(body));
 	connection.send(reply.tree());
 
-	log('ECHOBOT: I sent ' + from + ': ' + Strophe.getText(body));
+	log('ECHOBOT: I sent ' + from + ' : ' + Strophe.getText(body));
     }
 
     // we must return true to keep the handler alive.  
@@ -62,7 +64,9 @@ function onMessage(msg) {
 }
 
 $(document).ready(function () {
-    connection = new Strophe.Connection(BOSH_SERVICE);
+	proto = new Strophe.Websocket(WS_SERVICE)
+	//proto = new Strophe.Bosh(BOSH_SERVICE)
+    connection = new Strophe.Connection({protocol:proto });
     connection.rawInput = rawInput;
     connection.rawOutput = rawOutput;
 

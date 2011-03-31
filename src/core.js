@@ -695,6 +695,7 @@ Strophe = {
      */
     log: function (level, msg)
     {
+		// console.log(level + " - " + msg)
         return;
     },
 
@@ -1281,9 +1282,17 @@ Strophe.TimedHandler.prototype = {
  */
 Strophe.Connection = function (service)
 {
-    /* The path to the httpbind service. */
-    this.proto = new Strophe.Bosh(service);
-    /* The connected JID. */
+	if(service.protocol) {
+		this.protocol = service.protocol;
+	}
+	else {
+		console.log("Warning : this syntax will be deprecated to leave room for othe protocols. Please use new Strophe.Connection({proto : new Strophe.Bosh(BOSH_SERVICE)})" )
+	    /* The path to the httpbind service. */
+	    this.protocol = new Strophe.Bosh(service);
+	}
+    
+
+	/* The connected JID. */
     this.jid = "";
     /* stream:features */
     this.features = null;
@@ -1434,7 +1443,8 @@ Strophe.Connection.prototype = {
         // parse jid for domain and resource
         this.domain = Strophe.getDomainFromJid(this.jid);
 
-		this.proto.connect(this);
+		this.protocol.connect(this);
+		this.changeConnectStatus(Strophe.Status.CONNECTING, null);
     },
 
     /** Function: attach
@@ -1479,6 +1489,24 @@ Strophe.Connection.prototype = {
 
         this.changeConnectStatus(Strophe.Status.ATTACHED, null);
     },
+
+
+	/** Function start
+	 * This function initializes the stream
+	 * <stream:stream
+       to='example.com'
+       xmlns='jabber:client'
+       xmlns:stream='http://etherx.jabber.org/streams'
+       version='1.0'>
+	
+	 */
+	start: function() {
+		this.send($build('stream:stream', {
+			to: this.domain,
+			'xmlns': 'jabber:client',
+			'xmlns:stream': 'http://etherx.jabber.org/streams',
+			'version': '1.0'}).tree());
+	},
 
     /** Function: xmlInput
      *  User overrideable function that receives XML data coming into the
@@ -1566,16 +1594,16 @@ Strophe.Connection.prototype = {
         if (typeof(elem.sort) === "function") {
             for (var i = 0; i < elem.length; i++) {
 				if (this._ensureDOMElement(elem[i])) {
-					this.proto.send(elem[i])
+					this.protocol.send(elem[i])
 				}
             }
         } else if (typeof(elem.tree) === "function") {
 			if (this._ensureDOMElement(elem.tree())) {
-				this.proto.send(elem.tree())
+				this.protocol.send(elem.tree())
 			}
         } else {
 			if (this._ensureDOMElement(elem)) {
-				this.proto.send(elem)
+				this.protocol.send(elem)
 			}
         }
     },
@@ -1805,17 +1833,16 @@ Strophe.Connection.prototype = {
      */
     disconnect: function (reason)
     {
-        this.changeConnectStatus(Strophe.Status.DISCONNECTING, reason);
-
         Strophe.info("Disconnect was called because: " + reason);
+        this.changeConnectStatus(Strophe.Status.DISCONNECTING, reason);
         if (this.connected) {
+	        this.disconnecting = true;
             // setup timeout handler
             this._disconnectTimeout = this._addSysTimedHandler(3000, this._onDisconnectTimeout.bind(this));
 		 	if (this.authenticated) {
 	            this.send($pres({xmlns: Strophe.NS.CLIENT, type: 'unavailable'}));
 	        }
-
-	        this.disconnecting = true;
+			this.protocol.disconnect();
         }
     },
 
@@ -1866,9 +1893,7 @@ Strophe.Connection.prototype = {
     _doDisconnect: function ()
     {
         Strophe.info("_doDisconnect was called");
-        this.authenticated = false;
-        this.disconnecting = false;
-		this.proto._doDisconnect()
+		this.protocol.finish()
 
         // tell the parent we disconnected
         if (this.connected) {
@@ -1914,14 +1939,6 @@ Strophe.Connection.prototype = {
             this.handlers.push(this.addHandlers.pop());
         }
 
-        // handle graceful disconnect
-        if (this.disconnecting) {
-            this.deleteTimedHandler(this._disconnectTimeout);
-            this._disconnectTimeout = null;
-            this._doDisconnect();
-            return;
-        }
-
 		// send each incoming stanza through the handler chain
 		var i, newList;
 		// process handlers
@@ -1955,7 +1972,7 @@ Strophe.Connection.prototype = {
         } 
 
 
-		if(this.status == null) {
+		if(this.status == Strophe.Status.CONNECTING) {
 			this.changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
 			if (Strophe.getNodeFromJid(this.jid) === null && do_sasl_anonymous) {
 	            this._sasl_success_handler = this._addSysHandler(this._sasl_success_cb.bind(this), null, "success", null, null);
@@ -2193,7 +2210,7 @@ Strophe.Connection.prototype = {
 
 		
         // we must send an xmpp:restart now
-		this.proto._sendRestart();
+		this.protocol.restart();
         
         return false;
     },

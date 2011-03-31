@@ -171,11 +171,8 @@ $(document).ready(function () {
         var f = spy.bind(obj, arg1, arg2);
         f(arg3);
         equals(spy.called, true, "bound function should be called");
-        equals(spy.calledOn(obj), true,
-               "bound function should have correct context");
-        equals(spy.alwaysCalledWithExactly(arg1, arg2, arg3),
-               true,
-               "bound function should get all arguments");
+        equals(spy.calledOn(obj), true, "bound function should have correct context");
+        equals(spy.alwaysCalledWithExactly(arg1, arg2, arg3), true, "bound function should get all arguments");
     });
 
     module("XHR error handling");
