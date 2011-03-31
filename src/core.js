@@ -1247,113 +1247,6 @@ Strophe.TimedHandler.prototype = {
     }
 };
 
-/** PrivateClass: Strophe.Request
- *  _Private_ helper class that provides a cross implementation abstraction
- *  for a BOSH related XMLHttpRequest.
- *
- *  The Strophe.Request class is used internally to encapsulate BOSH request
- *  information.  It is not meant to be used from user's code.
- */
-
-/** PrivateConstructor: Strophe.Request
- *  Create and initialize a new Strophe.Request object.
- *
- *  Parameters:
- *    (XMLElement) elem - The XML data to be sent in the request.
- *    (Function) func - The function that will be called when the
- *      XMLHttpRequest readyState changes.
- *    (Integer) rid - The BOSH rid attribute associated with this request.
- *    (Integer) sends - The number of times this same request has been
- *      sent.
- */
-Strophe.Request = function (elem, func, rid, sends)
-{
-    this.id = ++Strophe._requestId;
-    this.xmlData = elem;
-    this.data = Strophe.serialize(elem);
-    // save original function in case we need to make a new request
-    // from this one.
-    this.origFunc = func;
-    this.func = func;
-    this.rid = rid;
-    this.date = NaN;
-    this.sends = sends || 0;
-    this.abort = false;
-    this.dead = null;
-    this.age = function () {
-        if (!this.date) { return 0; }
-        var now = new Date();
-        return (now - this.date) / 1000;
-    };
-    this.timeDead = function () {
-        if (!this.dead) { return 0; }
-        var now = new Date();
-        return (now - this.dead) / 1000;
-    };
-    this.xhr = this._newXHR();
-};
-
-Strophe.Request.prototype = {
-    /** PrivateFunction: getResponse
-     *  Get a response from the underlying XMLHttpRequest.
-     *
-     *  This function attempts to get a response from the request and checks
-     *  for errors.
-     *
-     *  Throws:
-     *    "parsererror" - A parser error occured.
-     *
-     *  Returns:
-     *    The DOM element tree of the response.
-     */
-    getResponse: function ()
-    {
-        var node = null;
-        if (this.xhr.responseXML && this.xhr.responseXML.documentElement) {
-            node = this.xhr.responseXML.documentElement;
-            if (node.tagName == "parsererror") {
-                Strophe.error("invalid response received");
-                Strophe.error("responseText: " + this.xhr.responseText);
-                Strophe.error("responseXML: " +
-                              Strophe.serialize(this.xhr.responseXML));
-                throw "parsererror";
-            }
-        } else if (this.xhr.responseText) {
-            Strophe.error("invalid response received");
-            Strophe.error("responseText: " + this.xhr.responseText);
-            Strophe.error("responseXML: " +
-                          Strophe.serialize(this.xhr.responseXML));
-        }
-
-        return node;
-    },
-
-    /** PrivateFunction: _newXHR
-     *  _Private_ helper function to create XMLHttpRequests.
-     *
-     *  This function creates XMLHttpRequests across all implementations.
-     *
-     *  Returns:
-     *    A new XMLHttpRequest.
-     */
-    _newXHR: function ()
-    {
-        var xhr = null;
-        if (window.XMLHttpRequest) {
-            xhr = new XMLHttpRequest();
-            if (xhr.overrideMimeType) {
-                xhr.overrideMimeType("text/xml");
-            }
-        } else if (window.ActiveXObject) {
-            xhr = new ActiveXObject("Microsoft.XMLHTTP");
-        }
-
-        // use Function.bind() to prepend ourselves as an argument
-        xhr.onreadystatechange = this.func.bind(null, this);
-
-        return xhr;
-    }
-};
 
 /** Class: Strophe.Connection
  *  XMPP Connection manager.
@@ -1389,14 +1282,9 @@ Strophe.Request.prototype = {
 Strophe.Connection = function (service)
 {
     /* The path to the httpbind service. */
-    this.service = service;
+    this.proto = new Strophe.Bosh(service);
     /* The connected JID. */
     this.jid = "";
-    /* request id for body tags */
-    this.rid = Math.floor(Math.random() * 4294967295);
-    /* The current session ID. */
-    this.sid = null;
-    this.streamId = null;
     /* stream:features */
     this.features = null;
 
@@ -1412,32 +1300,18 @@ Strophe.Connection = function (service)
     this.addTimeds = [];
     this.addHandlers = [];
 
-    this._idleTimeout = null;
-    this._disconnectTimeout = null;
-
     this.authenticated = false;
     this.disconnecting = false;
     this.connected = false;
+	this.status = null;
 
     this.errors = 0;
 
-    this.paused = false;
-
-    // default BOSH values
-    this.hold = 1;
-    this.wait = 60;
-    this.window = 5;
-
-    this._data = [];
-    this._requests = [];
     this._uniqueId = Math.round(Math.random() * 10000);
 
     this._sasl_success_handler = null;
     this._sasl_failure_handler = null;
     this._sasl_challenge_handler = null;
-
-    // setup onIdle callback every 1/10th of a second
-    this._idleTimeout = setTimeout(this._onIdle.bind(this), 100);
 
     // initialize plugins
     for (var k in Strophe._connectionPlugins) {
@@ -1461,10 +1335,6 @@ Strophe.Connection.prototype = {
      */
     reset: function ()
     {
-        this.rid = Math.floor(Math.random() * 4294967295);
-
-        this.sid = null;
-        this.streamId = null;
 
         // SASL
         this.do_session = false;
@@ -1481,34 +1351,11 @@ Strophe.Connection.prototype = {
         this.authenticated = false;
         this.disconnecting = false;
         this.connected = false;
+		this.status = null;
 
         this.errors = 0;
 
-        this._requests = [];
         this._uniqueId = Math.round(Math.random()*10000);
-    },
-
-    /** Function: pause
-     *  Pause the request manager.
-     *
-     *  This will prevent Strophe from sending any more requests to the
-     *  server.  This is very useful for temporarily pausing while a lot
-     *  of send() calls are happening quickly.  This causes Strophe to
-     *  send the data in a single request, saving many request trips.
-     */
-    pause: function ()
-    {
-        this.paused = true;
-    },
-
-    /** Function: resume
-     *  Resume the request manager.
-     *
-     *  This resumes after pause() has been called.
-     */
-    resume: function ()
-    {
-        this.paused = false;
     },
 
     /** Function: getUniqueId
@@ -1580,32 +1427,14 @@ Strophe.Connection.prototype = {
         this.authenticated = false;
         this.errors = 0;
 
-        this.wait = wait || this.wait;
-        this.hold = hold || this.hold;
+		/* TODO : SET VARS IN THE PROTO*/
+        // this.wait = wait || this.wait;
+        // this.hold = hold || this.hold;
 
         // parse jid for domain and resource
         this.domain = Strophe.getDomainFromJid(this.jid);
 
-        // build the body tag
-        var body = this._buildBody().attrs({
-            to: this.domain,
-            "xml:lang": "en",
-            wait: this.wait,
-            hold: this.hold,
-            content: "text/xml; charset=utf-8",
-            ver: "1.6",
-            "xmpp:version": "1.0",
-            "xmlns:xmpp": Strophe.NS.BOSH
-        });
-
-        this._changeConnectStatus(Strophe.Status.CONNECTING, null);
-
-        this._requests.push(
-            new Strophe.Request(body.tree(),
-                                this._onRequestStateChange.bind(
-                                    this, this._connect_cb.bind(this)),
-                                body.tree().getAttribute("rid")));
-        this._throttledRequestHandler();
+		this.proto.connect(this);
     },
 
     /** Function: attach
@@ -1648,7 +1477,7 @@ Strophe.Connection.prototype = {
         this.hold = hold || this.hold;
         this.window = wind || this.window;
 
-        this._changeConnectStatus(Strophe.Status.ATTACHED, null);
+        this.changeConnectStatus(Strophe.Status.ATTACHED, null);
     },
 
     /** Function: xmlInput
@@ -1736,17 +1565,19 @@ Strophe.Connection.prototype = {
         if (elem === null) { return ; }
         if (typeof(elem.sort) === "function") {
             for (var i = 0; i < elem.length; i++) {
-                this._queueData(elem[i]);
+				if (this._ensureDOMElement(elem[i])) {
+					this.proto.send(elem[i])
+				}
             }
         } else if (typeof(elem.tree) === "function") {
-            this._queueData(elem.tree());
+			if (this._ensureDOMElement(elem.tree())) {
+				this.proto.send(elem.tree())
+			}
         } else {
-            this._queueData(elem);
+			if (this._ensureDOMElement(elem)) {
+				this.proto.send(elem)
+			}
         }
-
-        this._throttledRequestHandler();
-        clearTimeout(this._idleTimeout);
-        this._idleTimeout = setTimeout(this._onIdle.bind(this), 100);
     },
 
     /** Function: flush
@@ -1836,34 +1667,20 @@ Strophe.Connection.prototype = {
 	return id;
     },
 
-    /** PrivateFunction: _queueData
-     *  Queue outgoing data for later sending.  Also ensures that the data
-     *  is a DOMElement.
+
+    /** PrivateFunction: _ensureDOMElement
+     *  Ensures that the data is a DOMElement.
      */
-    _queueData: function (element) {
-        if (element === null ||
-            !element.tagName ||
-            !element.childNodes) {
-            throw {
-                name: "StropheError",
-                message: "Cannot queue non-DOMElement."
-            };
-        }
+	_ensureDOMElement: function(element) {
+		if (element === null || !element.tagName || !element.childNodes) {
+			throw {
+				name: "StropheError",
+				message: "Cannot queue non-DOMElement."
+			};
+		}
+		return true;
+	},
 
-        this._data.push(element);
-    },
-
-    /** PrivateFunction: _sendRestart
-     *  Send an xmpp:restart stanza.
-     */
-    _sendRestart: function ()
-    {
-        this._data.push("restart");
-
-        this._throttledRequestHandler();
-        clearTimeout(this._idleTimeout);
-        this._idleTimeout = setTimeout(this._onIdle.bind(this), 100);
-    },
 
     /** Function: addTimedHandler
      *  Add a timed handler to the connection.
@@ -1966,8 +1783,7 @@ Strophe.Connection.prototype = {
      *  Parameters:
      *    (Strophe.Handler) handRef - The handler reference.
      */
-    deleteHandler: function (handRef)
-    {
+    deleteHandler: function (handRef) {
         // this must be done in the Idle loop so that we don't change
         // the handlers during iteration
         this.removeHandlers.push(handRef);
@@ -1989,18 +1805,21 @@ Strophe.Connection.prototype = {
      */
     disconnect: function (reason)
     {
-        this._changeConnectStatus(Strophe.Status.DISCONNECTING, reason);
+        this.changeConnectStatus(Strophe.Status.DISCONNECTING, reason);
 
         Strophe.info("Disconnect was called because: " + reason);
         if (this.connected) {
             // setup timeout handler
-            this._disconnectTimeout = this._addSysTimedHandler(
-                3000, this._onDisconnectTimeout.bind(this));
-            this._sendTerminate();
+            this._disconnectTimeout = this._addSysTimedHandler(3000, this._onDisconnectTimeout.bind(this));
+		 	if (this.authenticated) {
+	            this.send($pres({xmlns: Strophe.NS.CLIENT, type: 'unavailable'}));
+	        }
+
+	        this.disconnecting = true;
         }
     },
 
-    /** PrivateFunction: _changeConnectStatus
+    /** PrivateFunction: changeConnectStatus
      *  _Private_ helper function that makes sure plugins and the user's
      *  callback are notified of connection status changes.
      *
@@ -2009,8 +1828,9 @@ Strophe.Connection.prototype = {
      *      in Strophe.Status
      *    (String) condition - the error condition or null
      */
-    _changeConnectStatus: function (status, condition)
+    changeConnectStatus: function (status, condition)
     {
+		this.status = status;
         // notify all plugins listening for status changes
         for (var k in Strophe._connectionPlugins) {
             if (Strophe._connectionPlugins.hasOwnProperty(k)) {
@@ -2037,319 +1857,6 @@ Strophe.Connection.prototype = {
         }
     },
 
-    /** PrivateFunction: _buildBody
-     *  _Private_ helper function to generate the <body/> wrapper for BOSH.
-     *
-     *  Returns:
-     *    A Strophe.Builder with a <body/> element.
-     */
-    _buildBody: function ()
-    {
-        var bodyWrap = $build('body', {
-            rid: this.rid++,
-            xmlns: Strophe.NS.HTTPBIND
-        });
-
-        if (this.sid !== null) {
-            bodyWrap.attrs({sid: this.sid});
-        }
-
-        return bodyWrap;
-    },
-
-    /** PrivateFunction: _removeRequest
-     *  _Private_ function to remove a request from the queue.
-     *
-     *  Parameters:
-     *    (Strophe.Request) req - The request to remove.
-     */
-    _removeRequest: function (req)
-    {
-        Strophe.debug("removing request");
-
-        var i;
-        for (i = this._requests.length - 1; i >= 0; i--) {
-            if (req == this._requests[i]) {
-                this._requests.splice(i, 1);
-            }
-        }
-
-        // IE6 fails on setting to null, so set to empty function
-        req.xhr.onreadystatechange = function () {};
-
-        this._throttledRequestHandler();
-    },
-
-    /** PrivateFunction: _restartRequest
-     *  _Private_ function to restart a request that is presumed dead.
-     *
-     *  Parameters:
-     *    (Integer) i - The index of the request in the queue.
-     */
-    _restartRequest: function (i)
-    {
-        var req = this._requests[i];
-        if (req.dead === null) {
-            req.dead = new Date();
-        }
-
-        this._processRequest(i);
-    },
-
-    /** PrivateFunction: _processRequest
-     *  _Private_ function to process a request in the queue.
-     *
-     *  This function takes requests off the queue and sends them and
-     *  restarts dead requests.
-     *
-     *  Parameters:
-     *    (Integer) i - The index of the request in the queue.
-     */
-    _processRequest: function (i)
-    {
-        var req = this._requests[i];
-        var reqStatus = -1;
-
-        try {
-            if (req.xhr.readyState == 4) {
-                reqStatus = req.xhr.status;
-            }
-        } catch (e) {
-            Strophe.error("caught an error in _requests[" + i +
-                          "], reqStatus: " + reqStatus);
-        }
-
-        if (typeof(reqStatus) == "undefined") {
-            reqStatus = -1;
-        }
-
-        // make sure we limit the number of retries
-        if (req.sends > 5) {
-            this._onDisconnectTimeout();
-            return;
-        }
-
-        var time_elapsed = req.age();
-        var primaryTimeout = (!isNaN(time_elapsed) &&
-                              time_elapsed > Math.floor(Strophe.TIMEOUT * this.wait));
-        var secondaryTimeout = (req.dead !== null &&
-                                req.timeDead() > Math.floor(Strophe.SECONDARY_TIMEOUT * this.wait));
-        var requestCompletedWithServerError = (req.xhr.readyState == 4 &&
-                                               (reqStatus < 1 ||
-                                                reqStatus >= 500));
-        if (primaryTimeout || secondaryTimeout ||
-            requestCompletedWithServerError) {
-            if (secondaryTimeout) {
-                Strophe.error("Request " +
-                              this._requests[i].id +
-                              " timed out (secondary), restarting");
-            }
-            req.abort = true;
-            req.xhr.abort();
-            // setting to null fails on IE6, so set to empty function
-            req.xhr.onreadystatechange = function () {};
-            this._requests[i] = new Strophe.Request(req.xmlData,
-                                                    req.origFunc,
-                                                    req.rid,
-                                                    req.sends);
-            req = this._requests[i];
-        }
-
-        if (req.xhr.readyState === 0) {
-            Strophe.debug("request id " + req.id +
-                          "." + req.sends + " posting");
-
-            req.date = new Date();
-            try {
-                req.xhr.open("POST", this.service, true);
-            } catch (e2) {
-                Strophe.error("XHR open failed.");
-                if (!this.connected) {
-                    this._changeConnectStatus(Strophe.Status.CONNFAIL,
-                                              "bad-service");
-                }
-                this.disconnect();
-                return;
-            }
-
-            // Fires the XHR request -- may be invoked immediately
-            // or on a gradually expanding retry window for reconnects
-            var sendFunc = function () {
-                req.xhr.send(req.data);
-            };
-
-            // Implement progressive backoff for reconnects --
-            // First retry (send == 1) should also be instantaneous
-            if (req.sends > 1) {
-                // Using a cube of the retry number creats a nicely
-                // expanding retry window
-                var backoff = Math.pow(req.sends, 3) * 1000;
-                setTimeout(sendFunc, backoff);
-            } else {
-                sendFunc();
-            }
-
-            req.sends++;
-
-            this.xmlOutput(req.xmlData);
-            this.rawOutput(req.data);
-        } else {
-            Strophe.debug("_processRequest: " +
-                          (i === 0 ? "first" : "second") +
-                          " request has readyState of " +
-                          req.xhr.readyState);
-        }
-    },
-
-    /** PrivateFunction: _throttledRequestHandler
-     *  _Private_ function to throttle requests to the connection window.
-     *
-     *  This function makes sure we don't send requests so fast that the
-     *  request ids overflow the connection window in the case that one
-     *  request died.
-     */
-    _throttledRequestHandler: function ()
-    {
-        if (!this._requests) {
-            Strophe.debug("_throttledRequestHandler called with " +
-                          "undefined requests");
-        } else {
-            Strophe.debug("_throttledRequestHandler called with " +
-                          this._requests.length + " requests");
-        }
-
-        if (!this._requests || this._requests.length === 0) {
-            return;
-        }
-
-        if (this._requests.length > 0) {
-            this._processRequest(0);
-        }
-
-        if (this._requests.length > 1 &&
-            Math.abs(this._requests[0].rid -
-                     this._requests[1].rid) < this.window) {
-            this._processRequest(1);
-        }
-    },
-
-    /** PrivateFunction: _onRequestStateChange
-     *  _Private_ handler for Strophe.Request state changes.
-     *
-     *  This function is called when the XMLHttpRequest readyState changes.
-     *  It contains a lot of error handling logic for the many ways that
-     *  requests can fail, and calls the request callback when requests
-     *  succeed.
-     *
-     *  Parameters:
-     *    (Function) func - The handler for the request.
-     *    (Strophe.Request) req - The request that is changing readyState.
-     */
-    _onRequestStateChange: function (func, req)
-    {
-        Strophe.debug("request id " + req.id +
-                      "." + req.sends + " state changed to " +
-                      req.xhr.readyState);
-
-        if (req.abort) {
-            req.abort = false;
-            return;
-        }
-
-        // request complete
-        var reqStatus;
-        if (req.xhr.readyState == 4) {
-            reqStatus = 0;
-            try {
-                reqStatus = req.xhr.status;
-            } catch (e) {
-                // ignore errors from undefined status attribute.  works
-                // around a browser bug
-            }
-
-            if (typeof(reqStatus) == "undefined") {
-                reqStatus = 0;
-            }
-
-            if (this.disconnecting) {
-                if (reqStatus >= 400) {
-                    this._hitError(reqStatus);
-                    return;
-                }
-            }
-
-            var reqIs0 = (this._requests[0] == req);
-            var reqIs1 = (this._requests[1] == req);
-
-            if ((reqStatus > 0 && reqStatus < 500) || req.sends > 5) {
-                // remove from internal queue
-                this._removeRequest(req);
-                Strophe.debug("request id " +
-                              req.id +
-                              " should now be removed");
-            }
-
-            // request succeeded
-            if (reqStatus == 200) {
-                // if request 1 finished, or request 0 finished and request
-                // 1 is over Strophe.SECONDARY_TIMEOUT seconds old, we need to
-                // restart the other - both will be in the first spot, as the
-                // completed request has been removed from the queue already
-                if (reqIs1 ||
-                    (reqIs0 && this._requests.length > 0 &&
-                     this._requests[0].age() > Math.floor(Strophe.SECONDARY_TIMEOUT * this.wait))) {
-                    this._restartRequest(0);
-                }
-                // call handler
-                Strophe.debug("request id " +
-                              req.id + "." +
-                              req.sends + " got 200");
-                func(req);
-                this.errors = 0;
-            } else {
-                Strophe.error("request id " +
-                              req.id + "." +
-                              req.sends + " error " + reqStatus +
-                              " happened");
-                if (reqStatus === 0 ||
-                    (reqStatus >= 400 && reqStatus < 600) ||
-                    reqStatus >= 12000) {
-                    this._hitError(reqStatus);
-                    if (reqStatus >= 400 && reqStatus < 500) {
-                        this._changeConnectStatus(Strophe.Status.DISCONNECTING,
-                                                  null);
-                        this._doDisconnect();
-                    }
-                }
-            }
-
-            if (!((reqStatus > 0 && reqStatus < 500) ||
-                  req.sends > 5)) {
-                this._throttledRequestHandler();
-            }
-        }
-    },
-
-    /** PrivateFunction: _hitError
-     *  _Private_ function to handle the error count.
-     *
-     *  Requests are resent automatically until their error count reaches
-     *  5.  Each time an error is encountered, this function is called to
-     *  increment the count and disconnect if the count is too high.
-     *
-     *  Parameters:
-     *    (Integer) reqStatus - The request status.
-     */
-    _hitError: function (reqStatus)
-    {
-        this.errors++;
-        Strophe.warn("request errored, status: " + reqStatus +
-                     ", number of errors: " + this.errors);
-        if (this.errors > 4) {
-            this._onDisconnectTimeout();
-        }
-    },
-
     /** PrivateFunction: _doDisconnect
      *  _Private_ function to disconnect.
      *
@@ -2361,13 +1868,11 @@ Strophe.Connection.prototype = {
         Strophe.info("_doDisconnect was called");
         this.authenticated = false;
         this.disconnecting = false;
-        this.sid = null;
-        this.streamId = null;
-        this.rid = Math.floor(Math.random() * 4294967295);
+		this.proto._doDisconnect()
 
         // tell the parent we disconnected
         if (this.connected) {
-            this._changeConnectStatus(Strophe.Status.DISCONNECTED, null);
+            this.changeConnectStatus(Strophe.Status.DISCONNECTED, null);
             this.connected = false;
         }
 
@@ -2381,28 +1886,18 @@ Strophe.Connection.prototype = {
     },
 
     /** PrivateFunction: _dataRecv
-     *  _Private_ handler to processes incoming data from the the connection.
+     *  _Private_ handler to processes incoming stanza from the protocol.
      *
-     *  Except for _connect_cb handling the initial connection request,
-     *  this function handles the incoming data for all requests.  This
-     *  function also fires stanza handlers that match each incoming
-     *  stanza.
      *
      *  Parameters:
-     *    (Strophe.Request) req - The request that has data ready.
+     *    (Strophe.Request) elem - The received stanza
      */
-    _dataRecv: function (req)
+    _dataRecv: function (elem)
     {
-        try {
-            var elem = req.getResponse();
-        } catch (e) {
-            if (e != "parsererror") { throw e; }
-            this.disconnect("strophe-parsererror");
-        }
+	    this.connected = true; // We're connected since we got data
         if (elem === null) { return; }
 
         this.xmlInput(elem);
-        this.rawInput(Strophe.serialize(elem));
 
         // remove handlers scheduled for deletion
         var i, hand;
@@ -2420,149 +1915,31 @@ Strophe.Connection.prototype = {
         }
 
         // handle graceful disconnect
-        if (this.disconnecting && this._requests.length === 0) {
+        if (this.disconnecting) {
             this.deleteTimedHandler(this._disconnectTimeout);
             this._disconnectTimeout = null;
             this._doDisconnect();
             return;
         }
 
-        var typ = elem.getAttribute("type");
-        var cond, conflict;
-        if (typ !== null && typ == "terminate") {
-            // Don't process stanzas that come in after disconnect
-            if (this.disconnecting) {
-                return;
+		// send each incoming stanza through the handler chain
+		var i, newList;
+		// process handlers
+        newList = this.handlers;
+		this.handlers = [];
+		for (i = 0; i < newList.length; i++) {
+			var hand = newList[i];
+			if (hand.isMatch(elem) && (this.authenticated || !hand.user)) {
+				if (hand.run(elem)) {
+					this.handlers.push(hand);
+				}
+			} else {
+				this.handlers.push(hand);
             }
+		}
 
-            // an error occurred
-            cond = elem.getAttribute("condition");
-            conflict = elem.getElementsByTagName("conflict");
-            if (cond !== null) {
-                if (cond == "remote-stream-error" && conflict.length > 0) {
-                    cond = "conflict";
-                }
-                this._changeConnectStatus(Strophe.Status.CONNFAIL, cond);
-            } else {
-                this._changeConnectStatus(Strophe.Status.CONNFAIL, "unknown");
-            }
-            this.disconnect();
-            return;
-        }
-
-        // send each incoming stanza through the handler chain
-        var that = this;
-        Strophe.forEachChild(elem, null, function (child) {
-            var i, newList;
-            // process handlers
-            newList = that.handlers;
-            that.handlers = [];
-            for (i = 0; i < newList.length; i++) {
-                var hand = newList[i];
-                if (hand.isMatch(child) &&
-                    (that.authenticated || !hand.user)) {
-                    if (hand.run(child)) {
-                        that.handlers.push(hand);
-                    }
-                } else {
-                    that.handlers.push(hand);
-                }
-            }
-        });
-    },
-
-    /** PrivateFunction: _sendTerminate
-     *  _Private_ function to send initial disconnect sequence.
-     *
-     *  This is the first step in a graceful disconnect.  It sends
-     *  the BOSH server a terminate body and includes an unavailable
-     *  presence if authentication has completed.
-     */
-    _sendTerminate: function ()
-    {
-        Strophe.info("_sendTerminate was called");
-        var body = this._buildBody().attrs({type: "terminate"});
-
-        if (this.authenticated) {
-            body.c('presence', {
-                xmlns: Strophe.NS.CLIENT,
-                type: 'unavailable'
-            });
-        }
-
-        this.disconnecting = true;
-
-        var req = new Strophe.Request(body.tree(),
-                                      this._onRequestStateChange.bind(
-                                          this, this._dataRecv.bind(this)),
-                                      body.tree().getAttribute("rid"));
-
-        this._requests.push(req);
-        this._throttledRequestHandler();
-    },
-
-    /** PrivateFunction: _connect_cb
-     *  _Private_ handler for initial connection request.
-     *
-     *  This handler is used to process the initial connection request
-     *  response from the BOSH server. It is used to set up authentication
-     *  handlers and start the authentication process.
-     *
-     *  SASL authentication will be attempted if available, otherwise
-     *  the code will fall back to legacy authentication.
-     *
-     *  Parameters:
-     *    (Strophe.Request) req - The current request.
-     */
-    _connect_cb: function (req)
-    {
-        Strophe.info("_connect_cb was called");
-
-        this.connected = true;
-        var bodyWrap = req.getResponse();
-        if (!bodyWrap) { return; }
-
-        this.xmlInput(bodyWrap);
-        this.rawInput(Strophe.serialize(bodyWrap));
-
-        var typ = bodyWrap.getAttribute("type");
-        var cond, conflict;
-        if (typ !== null && typ == "terminate") {
-            // an error occurred
-            cond = bodyWrap.getAttribute("condition");
-            conflict = bodyWrap.getElementsByTagName("conflict");
-            if (cond !== null) {
-                if (cond == "remote-stream-error" && conflict.length > 0) {
-                    cond = "conflict";
-                }
-                this._changeConnectStatus(Strophe.Status.CONNFAIL, cond);
-            } else {
-                this._changeConnectStatus(Strophe.Status.CONNFAIL, "unknown");
-            }
-            return;
-        }
-
-        // check to make sure we don't overwrite these if _connect_cb is
-        // called multiple times in the case of missing stream:features
-        if (!this.sid) {
-            this.sid = bodyWrap.getAttribute("sid");
-        }
-        if (!this.stream_id) {
-            this.stream_id = bodyWrap.getAttribute("authid");
-        }
-        var wind = bodyWrap.getAttribute('requests');
-        if (wind) { this.window = parseInt(wind, 10); }
-        var hold = bodyWrap.getAttribute('hold');
-        if (hold) { this.hold = parseInt(hold, 10); }
-        var wait = bodyWrap.getAttribute('wait');
-        if (wait) { this.wait = parseInt(wait, 10); }
-
-
-        var do_sasl_plain = false;
-        var do_sasl_digest_md5 = false;
-        var do_sasl_anonymous = false;
-
-        var mechanisms = bodyWrap.getElementsByTagName("mechanism");
+		// Now, the connection stuff. Technically, these should probably be handlers too, but it seems that they're not currently.
+		var mechanisms = elem.getElementsByTagName("mechanism");
         var i, mech, auth_str, hashed_auth_str;
         if (mechanisms.length > 0) {
             for (i = 0; i < mechanisms.length; i++) {
@@ -2575,87 +1952,62 @@ Strophe.Connection.prototype = {
                     do_sasl_anonymous = true;
                 }
             }
-        } else {
-            // we didn't get stream:features yet, so we need wait for it
-            // by sending a blank poll request
-            var body = this._buildBody();
-            this._requests.push(
-                new Strophe.Request(body.tree(),
-                                    this._onRequestStateChange.bind(
-                                        this, this._connect_cb.bind(this)),
-                                    body.tree().getAttribute("rid")));
-            this._throttledRequestHandler();
-            return;
-        }
+        } 
 
-        if (Strophe.getNodeFromJid(this.jid) === null &&
-            do_sasl_anonymous) {
-            this._changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
-            this._sasl_success_handler = this._addSysHandler(
-                this._sasl_success_cb.bind(this), null,
-                "success", null, null);
-            this._sasl_failure_handler = this._addSysHandler(
-                this._sasl_failure_cb.bind(this), null,
-                "failure", null, null);
 
-            this.send($build("auth", {
-                xmlns: Strophe.NS.SASL,
-                mechanism: "ANONYMOUS"
-            }).tree());
-        } else if (Strophe.getNodeFromJid(this.jid) === null) {
-            // we don't have a node, which is required for non-anonymous
-            // client connections
-            this._changeConnectStatus(Strophe.Status.CONNFAIL,
-                                      'x-strophe-bad-non-anon-jid');
-            this.disconnect();
-        } else if (do_sasl_digest_md5) {
-            this._changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
-            this._sasl_challenge_handler = this._addSysHandler(
-                this._sasl_challenge1_cb.bind(this), null,
-                "challenge", null, null);
-            this._sasl_failure_handler = this._addSysHandler(
-                this._sasl_failure_cb.bind(this), null,
-                "failure", null, null);
+		if(this.status == null) {
+			this.changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
+			if (Strophe.getNodeFromJid(this.jid) === null && do_sasl_anonymous) {
+	            this._sasl_success_handler = this._addSysHandler(this._sasl_success_cb.bind(this), null, "success", null, null);
+	            this._sasl_failure_handler = this._addSysHandler(this._sasl_failure_cb.bind(this), null, "failure", null, null);
 
-            this.send($build("auth", {
-                xmlns: Strophe.NS.SASL,
-                mechanism: "DIGEST-MD5"
-            }).tree());
-        } else if (do_sasl_plain) {
-            // Build the plain auth string (barejid null
-            // username null password) and base 64 encoded.
-            auth_str = Strophe.getBareJidFromJid(this.jid);
-            auth_str = auth_str + "\u0000";
-            auth_str = auth_str + Strophe.getNodeFromJid(this.jid);
-            auth_str = auth_str + "\u0000";
-            auth_str = auth_str + this.pass;
+	            this.send($build("auth", {
+	                xmlns: Strophe.NS.SASL,
+	                mechanism: "ANONYMOUS"
+	            }).tree());
 
-            this._changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
-            this._sasl_success_handler = this._addSysHandler(
-                this._sasl_success_cb.bind(this), null,
-                "success", null, null);
-            this._sasl_failure_handler = this._addSysHandler(
-                this._sasl_failure_cb.bind(this), null,
-                "failure", null, null);
+	        } else if (Strophe.getNodeFromJid(this.jid) === null) {
+	            // we don't have a node, which is required for non-anonymous
+	            // client connections
+	            this.changeConnectStatus(Strophe.Status.CONNFAIL, 'x-strophe-bad-non-anon-jid');
+	            this.disconnect();
+	        } else if (do_sasl_digest_md5) {
+	            this._sasl_challenge_handler = this._addSysHandler(this._sasl_challenge1_cb.bind(this), null, "challenge", null, null);
+	            this._sasl_failure_handler = this._addSysHandler(this._sasl_failure_cb.bind(this), null, "failure", null, null);
 
-            hashed_auth_str = Base64.encode(auth_str);
-            this.send($build("auth", {
-                xmlns: Strophe.NS.SASL,
-                mechanism: "PLAIN"
-            }).t(hashed_auth_str).tree());
-        } else {
-            this._changeConnectStatus(Strophe.Status.AUTHENTICATING, null);
-            this._addSysHandler(this._auth1_cb.bind(this), null, null,
-                                null, "_auth_1");
+	            this.send($build("auth", {
+	                xmlns: Strophe.NS.SASL,
+	                mechanism: "DIGEST-MD5"
+	            }).tree());
+	        } else if (do_sasl_plain) {
+	            // Build the plain auth string (barejid null
+	            // username null password) and base 64 encoded.
+	            auth_str = Strophe.getBareJidFromJid(this.jid);
+	            auth_str = auth_str + "\u0000";
+	            auth_str = auth_str + Strophe.getNodeFromJid(this.jid);
+	            auth_str = auth_str + "\u0000";
+	            auth_str = auth_str + this.pass;
 
-            this.send($iq({
-                type: "get",
-                to: this.domain,
-                id: "_auth_1"
-            }).c("query", {
-                xmlns: Strophe.NS.AUTH
-            }).c("username", {}).t(Strophe.getNodeFromJid(this.jid)).tree());
-        }
+	            this._sasl_success_handler = this._addSysHandler(this._sasl_success_cb.bind(this), null, "success", null, null);
+	            this._sasl_failure_handler = this._addSysHandler(this._sasl_failure_cb.bind(this), null, "failure", null, null);
+
+	            hashed_auth_str = Base64.encode(auth_str);
+	            this.send($build("auth", {
+	                xmlns: Strophe.NS.SASL,
+	                mechanism: "PLAIN"
+	            }).t(hashed_auth_str).tree());
+	        } else {
+	            this._addSysHandler(this._auth1_cb.bind(this), null, null, null, "_auth_1");
+
+	            this.send($iq({
+	                type: "get",
+	                to: this.domain,
+	                id: "_auth_1"
+	            }).c("query", {
+	                xmlns: Strophe.NS.AUTH
+	            }).c("username", {}).t(Strophe.getNodeFromJid(this.jid)).tree());
+	        }
+		}
     },
 
     /** PrivateFunction: _sasl_challenge1_cb
@@ -2728,15 +2080,9 @@ Strophe.Connection.prototype = {
                           MD5.hexdigest(A2))) + ',';
         responseText += 'charset="utf-8"';
 
-        this._sasl_challenge_handler = this._addSysHandler(
-            this._sasl_challenge2_cb.bind(this), null,
-            "challenge", null, null);
-        this._sasl_success_handler = this._addSysHandler(
-            this._sasl_success_cb.bind(this), null,
-            "success", null, null);
-        this._sasl_failure_handler = this._addSysHandler(
-            this._sasl_failure_cb.bind(this), null,
-            "failure", null, null);
+        this._sasl_challenge_handler = this._addSysHandler(this._sasl_challenge2_cb.bind(this), null, "challenge", null, null);
+        this._sasl_success_handler = this._addSysHandler(this._sasl_success_cb.bind(this), null, "success", null, null);
+        this._sasl_failure_handler = this._addSysHandler(this._sasl_failure_cb.bind(this), null, "failure", null, null);
 
         this.send($build('response', {
             xmlns: Strophe.NS.SASL
@@ -2776,12 +2122,9 @@ Strophe.Connection.prototype = {
         this.deleteHandler(this._sasl_success_handler);
         this.deleteHandler(this._sasl_failure_handler);
 
-        this._sasl_success_handler = this._addSysHandler(
-            this._sasl_success_cb.bind(this), null,
-            "success", null, null);
-        this._sasl_failure_handler = this._addSysHandler(
-            this._sasl_failure_cb.bind(this), null,
-            "failure", null, null);
+        this._sasl_success_handler = this._addSysHandler(this._sasl_success_cb.bind(this), null, "success", null, null);
+        this._sasl_failure_handler = this._addSysHandler(this._sasl_failure_cb.bind(this), null, "failure", null, null);
+
         this.send($build('response', {xmlns: Strophe.NS.SASL}).tree());
         return false;
     },
@@ -2846,12 +2189,12 @@ Strophe.Connection.prototype = {
             this._sasl_challenge_handler = null;
         }
 
-        this._addSysHandler(this._sasl_auth1_cb.bind(this), null,
-                            "stream:features", null, null);
+        this._addSysHandler(this._sasl_auth1_cb.bind(this), null, "stream:features", null, null);
 
+		
         // we must send an xmpp:restart now
-        this._sendRestart();
-
+		this.proto._sendRestart();
+        
         return false;
     },
 
@@ -2883,11 +2226,10 @@ Strophe.Connection.prototype = {
         }
 
         if (!this.do_bind) {
-            this._changeConnectStatus(Strophe.Status.AUTHFAIL, null);
+            this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
             return false;
         } else {
-            this._addSysHandler(this._sasl_bind_cb.bind(this), null, null,
-                                null, "_bind_auth_2");
+            this._addSysHandler(this._sasl_bind_cb.bind(this), null, null, null, "_bind_auth_2");
 
             var resource = Strophe.getResourceFromJid(this.jid);
             if (resource) {
@@ -2917,7 +2259,7 @@ Strophe.Connection.prototype = {
     {
         if (elem.getAttribute("type") == "error") {
             Strophe.info("SASL binding failed.");
-            this._changeConnectStatus(Strophe.Status.AUTHFAIL, null);
+            this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
             return false;
         }
 
@@ -2939,12 +2281,12 @@ Strophe.Connection.prototype = {
                                   .tree());
                 } else {
                     this.authenticated = true;
-                    this._changeConnectStatus(Strophe.Status.CONNECTED, null);
+                    this.changeConnectStatus(Strophe.Status.CONNECTED, null);
                 }
             }
         } else {
             Strophe.info("SASL binding failed.");
-            this._changeConnectStatus(Strophe.Status.AUTHFAIL, null);
+            this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
             return false;
         }
     },
@@ -2965,10 +2307,10 @@ Strophe.Connection.prototype = {
     {
         if (elem.getAttribute("type") == "result") {
             this.authenticated = true;
-            this._changeConnectStatus(Strophe.Status.CONNECTED, null);
+            this.changeConnectStatus(Strophe.Status.CONNECTED, null);
         } else if (elem.getAttribute("type") == "error") {
             Strophe.info("Session creation failed.");
-            this._changeConnectStatus(Strophe.Status.AUTHFAIL, null);
+            this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
             return false;
         }
 
@@ -2996,7 +2338,7 @@ Strophe.Connection.prototype = {
             this._sasl_challenge_handler = null;
         }
 
-        this._changeConnectStatus(Strophe.Status.AUTHFAIL, null);
+        this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
         return false;
     },
 
@@ -3016,9 +2358,9 @@ Strophe.Connection.prototype = {
     {
         if (elem.getAttribute("type") == "result") {
             this.authenticated = true;
-            this._changeConnectStatus(Strophe.Status.CONNECTED, null);
+            this.changeConnectStatus(Strophe.Status.CONNECTED, null);
         } else if (elem.getAttribute("type") == "error") {
-            this._changeConnectStatus(Strophe.Status.AUTHFAIL, null);
+            this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
             this.disconnect();
         }
 
@@ -3078,127 +2420,12 @@ Strophe.Connection.prototype = {
     _onDisconnectTimeout: function ()
     {
         Strophe.info("_onDisconnectTimeout was called");
-
-        // cancel all remaining requests and clear the queue
-        var req;
-        while (this._requests.length > 0) {
-            req = this._requests.pop();
-            req.abort = true;
-            req.xhr.abort();
-            // jslint complains, but this is fine. setting to empty func
-            // is necessary for IE6
-            req.xhr.onreadystatechange = function () {};
-        }
-
         // actually disconnect
         this._doDisconnect();
-
         return false;
     },
 
-    /** PrivateFunction: _onIdle
-     *  _Private_ handler to process events during idle cycle.
-     *
-     *  This handler is called every 100ms to fire timed handlers that
-     *  are ready and keep poll requests going.
-     */
-    _onIdle: function ()
-    {
-        var i, thand, since, newList;
 
-        // add timed handlers scheduled for addition
-        // NOTE: we add before remove in the case a timed handler is
-        // added and then deleted before the next _onIdle() call.
-        while (this.addTimeds.length > 0) {
-            this.timedHandlers.push(this.addTimeds.pop());
-        }
-
-        // remove timed handlers that have been scheduled for deletion
-        while (this.removeTimeds.length > 0) {
-            thand = this.removeTimeds.pop();
-            i = this.timedHandlers.indexOf(thand);
-            if (i >= 0) {
-                this.timedHandlers.splice(i, 1);
-            }
-        }
-
-        // call ready timed handlers
-        var now = new Date().getTime();
-        newList = [];
-        for (i = 0; i < this.timedHandlers.length; i++) {
-            thand = this.timedHandlers[i];
-            if (this.authenticated || !thand.user) {
-                since = thand.lastCalled + thand.period;
-                if (since - now <= 0) {
-                    if (thand.run()) {
-                        newList.push(thand);
-                    }
-                } else {
-                    newList.push(thand);
-                }
-            }
-        }
-        this.timedHandlers = newList;
-
-        var body, time_elapsed;
-
-        // if no requests are in progress, poll
-        if (this.authenticated && this._requests.length === 0 &&
-            this._data.length === 0 && !this.disconnecting) {
-            Strophe.info("no requests during idle cycle, sending " +
-                         "blank request");
-            this._data.push(null);
-        }
-
-        if (this._requests.length < 2 && this._data.length > 0 &&
-            !this.paused) {
-            body = this._buildBody();
-            for (i = 0; i < this._data.length; i++) {
-                if (this._data[i] !== null) {
-                    if (this._data[i] === "restart") {
-                        body.attrs({
-                            to: this.domain,
-                            "xml:lang": "en",
-                            "xmpp:restart": "true",
-                            "xmlns:xmpp": Strophe.NS.BOSH
-                        });
-                    } else {
-                        body.cnode(this._data[i]).up();
-                    }
-                }
-            }
-            delete this._data;
-            this._data = [];
-            this._requests.push(
-                new Strophe.Request(body.tree(),
-                                    this._onRequestStateChange.bind(
-                                        this, this._dataRecv.bind(this)),
-                                    body.tree().getAttribute("rid")));
-            this._processRequest(this._requests.length - 1);
-        }
-
-        if (this._requests.length > 0) {
-            time_elapsed = this._requests[0].age();
-            if (this._requests[0].dead !== null) {
-                if (this._requests[0].timeDead() >
-                    Math.floor(Strophe.SECONDARY_TIMEOUT * this.wait)) {
-                    this._throttledRequestHandler();
-                }
-            }
-
-            if (time_elapsed > Math.floor(Strophe.TIMEOUT * this.wait)) {
-                Strophe.warn("Request " +
-                             this._requests[0].id +
-                             " timed out, over " + Math.floor(Strophe.TIMEOUT * this.wait) +
-                             " seconds since last activity");
-                this._throttledRequestHandler();
-            }
-        }
-
-        // reactivate the timer
-        clearTimeout(this._idleTimeout);
-        this._idleTimeout = setTimeout(this._onIdle.bind(this), 100);
-    }
 };
 
 if (callback) {
