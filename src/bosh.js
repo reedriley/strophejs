@@ -194,13 +194,6 @@ Strophe.Bosh.prototype = {
 		// setup _sendNextRequest callback every 1/10th of a second
 		this._sendNextRequestTimeout = setTimeout(this._sendNextRequest.bind(this), 100);
 	},
-
-	/** Function: reconnect 
-	 *  Re-initiliazes the server connection
-	 */
-	reconnect: function() {
-		
-	},
 	
 	/** Function: disconnect
 	 *  Disconnects from the Bosh server

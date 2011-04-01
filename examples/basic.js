@@ -65,8 +65,8 @@ function onMessage(msg) {
 }
 
 $(document).ready(function () {
-//	proto = new Strophe.Websocket(WS_SERVICE)
-	proto = new Strophe.Bosh(BOSH_SERVICE)
+	proto = new Strophe.Websocket(WS_SERVICE)
+	// proto = new Strophe.Bosh(BOSH_SERVICE)
     connection = new Strophe.Connection({protocol:proto });
     connection.rawInput = rawInput;
     connection.rawOutput = rawOutput;

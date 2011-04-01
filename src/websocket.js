@@ -77,7 +77,7 @@ Strophe.Websocket.prototype = {
      *  Send an xmpp:restart stanza.
      */
 	restart: function() {
-		
+		this.connection.start();
 	},
 	
 	/** PrivateFunction: _onError
