@@ -103,9 +103,8 @@ Strophe.Websocket.prototype = {
      *  _Private_ function to handle websockets closing.
      *
 	 */
-	_onClose: function() {
+	_onClose: function(event) {
 		console.log("CLOSED")
-		
 	},
 	
 	/** PrivateFunction: _onError
