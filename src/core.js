@@ -1244,10 +1244,12 @@ Strophe.TimedHandler.prototype = {
 /** Class: Strophe.Connection
  *  XMPP Connection manager.
  *
- *  Thie class is the main part of Strophe.  It manages a BOSH connection
+ *  Thie class is the main part of Strophe.  It manages the connection
  *  to an XMPP server and dispatches events to the user callbacks as
  *  data arrives.  It supports SASL PLAIN, SASL DIGEST-MD5, and legacy
  *  authentication.
+ *  For the connection to the XMPP server it uses and underlying protocol
+ *  supplied when starting the connection.
  *
  *  After creating a Strophe.Connection object, the user will typically
  *  call connect() with a user supplied callback to handle connection level
@@ -1267,7 +1269,10 @@ Strophe.TimedHandler.prototype = {
  *  Create and initialize a Strophe.Connection object.
  *
  *  Parameters:
- *    (String) service - The BOSH service URL.
+ *    (Object) params - An Object with a new protocl object.
+ *    For Bosh, connection = new Strophe.Connection({protocol: new Strophe.Bosh(BOSH_SERVICE)});
+ *    Currently supported protocols : Bosh, Websocket.
+ * 	  Coming : XMPP socket (for use in Node.js), Socket.io...
  *
  *  Returns:
  *    A new Strophe.Connection object.
