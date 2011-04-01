@@ -37,8 +37,8 @@ Strophe.Request = function (elem, func, rid, sends)
 };
 
 /** Strophe Namespaces for BOSH
- *	HTTPBIND: http://jabber.org/protocol/httpbind
- *  BOSH: urn:xmpp:xbosh
+ *  NS.HTTPBIND - HTTP BIND namespace from XEP 124.
+ *  NS.BOSH - BOSH namespace from XEP 206.
  */
 Strophe.NS['HTTPBIND'] = "http://jabber.org/protocol/httpbind",
 Strophe.NS['BOSH'] = "urn:xmpp:xbosh",

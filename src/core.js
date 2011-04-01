@@ -173,8 +173,6 @@ Strophe = {
     /** Constants: XMPP Namespace Constants
      *  Common namespace constants from the XMPP RFCs and XEPs.
      *
-     *  NS.HTTPBIND - HTTP BIND namespace from XEP 124.
-     *  NS.BOSH - BOSH namespace from XEP 206.
      *  NS.CLIENT - Main XMPP client namespace.
      *  NS.AUTH - Legacy authentication namespace.
      *  NS.ROSTER - Roster operations namespace.
@@ -1526,9 +1524,8 @@ Strophe.Connection.prototype = {
     /** Function: send
      *  Send a stanza.
      *
-     *  This function is called to push data onto the send queue to
-     *  go out over the wire.  Whenever a request is sent to the BOSH
-     *  server, all pending data is sent and the queue is flushed.
+     *  This function is called to push data to the server through the 
+	 *  protocol object.
      *
      *  Parameters:
      *    (XMLElement |
@@ -1553,22 +1550,6 @@ Strophe.Connection.prototype = {
 				this.protocol.send(elem)
 			}
         }
-    },
-
-    /** Function: flush
-     *  Immediately send any pending outgoing data.
-     *
-     *  Normally send() queues outgoing data until the next idle period
-     *  (100ms), which optimizes network use in the common cases when
-     *  several send()s are called in succession. flush() can be used to
-     *  immediately send all pending data.
-     */
-    flush: function ()
-    {
-        // cancel the pending idle period and run the idle function
-        // immediately
-        clearTimeout(this._idleTimeout);
-        this._onIdle();
     },
 
     /** Function: sendIQ
@@ -1768,9 +1749,8 @@ Strophe.Connection.prototype = {
      *  Start the graceful disconnection process.
      *
      *  This function starts the disconnection process.  This process starts
-     *  by sending unavailable presence and sending BOSH body of type
-     *  terminate.  A timeout handler makes sure that disconnection happens
-     *  even if the BOSH server does not respond.
+     *  by sending unavailable presence.  
+	 *  A timeout handler makes sure that disconnection happens.
      *
      *  The user supplied connection callback will be notified of the
      *  progress as this process happens.
@@ -1834,8 +1814,8 @@ Strophe.Connection.prototype = {
     /** PrivateFunction: _doDisconnect
      *  _Private_ function to disconnect.
      *
-     *  This is the last piece of the disconnection logic.  This resets the
-     *  connection and alerts the user's connection callback.
+     *  This is the last piece of the disconnection logic in the XMPP connection.  
+	 *  This resets the connection and alerts the user's connection callback.
      */
     _doDisconnect: function ()
     {
@@ -1859,7 +1839,6 @@ Strophe.Connection.prototype = {
 
     /** Function: receiveData
      *  Handler to processes incoming stanza from the protocol layer. It should _not_ be called by the user.
-     *
      *
      *  Parameters:
      *    (Strophe.Request) elem - The received stanza
