@@ -11,15 +11,25 @@
     Base64, MD5,
     Strophe, $build, $msg, $iq, $pres */
 
-/** File: strophe.js
+/** File: core.js
  *  A JavaScript library for XMPP.
  *
- *  This is the JavaScript version of the Strophe library.  Since JavaScript
- *  has no facilities for persistent TCP connections, this library uses
- *  Bidirectional-streams Over Synchronous HTTP (BOSH) to emulate
+ *  This is the JavaScript version of the Strophe library.  It relies on
+ *  an underlying protocol.
+ */
+
+/** File: bosh.js
+ *  Since JavaScript has no facilities for persistent TCP connections, this 
+ *  library uses Bidirectional-streams Over Synchronous HTTP (BOSH) to emulate
  *  a persistent, stateful, two-way connection to an XMPP server.  More
  *  information on BOSH can be found in XEP 124.
  */
+
+/** File: websocket.js
+ *	Uses HTML5s websocket as the underlying protocol to allow for fast
+ *  communication from the browser to the XMPP server.
+ *  It needs an Ejabberd server that is able to deal with Websockets.
+ */ 
 
 /** PrivateFunction: Function.prototype.bind
  *  Bind a function to an instance.
@@ -178,8 +188,6 @@ Strophe = {
      *  NS.SESSION - XMPP Session namespace from RFC 3920.
      */
     NS: {
-        HTTPBIND: "http://jabber.org/protocol/httpbind",
-        BOSH: "urn:xmpp:xbosh",
         CLIENT: "jabber:client",
         AUTH: "jabber:iq:auth",
         ROSTER: "jabber:iq:roster",

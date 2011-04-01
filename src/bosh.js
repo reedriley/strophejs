@@ -36,6 +36,14 @@ Strophe.Request = function (elem, func, rid, sends)
     this.xhr = this._newXHR();
 };
 
+/** Strophe Namespaces for BOSH
+ *	HTTPBIND: http://jabber.org/protocol/httpbind
+ *  BOSH: urn:xmpp:xbosh
+ */
+Strophe.NS['HTTPBIND'] = "http://jabber.org/protocol/httpbind",
+Strophe.NS['BOSH'] = "urn:xmpp:xbosh",
+
+
 Strophe.Request.prototype = {
     /** PrivateFunction: getResponse
      *  Get a response from the underlying XMLHttpRequest.
