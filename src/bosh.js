@@ -152,6 +152,23 @@ Strophe.Bosh = function(service)
 
 Strophe.Bosh.prototype = {
 	
+    /** PrivateConstants: Timeout Values
+     *  Timeout values for error states.  These values are in seconds.
+     *  These should not be changed unless you know exactly what you are
+     *  doing.
+     *
+     *  TIMEOUT - Timeout multiplier. A waiting request will be considered
+     *      failed after Math.floor(TIMEOUT * wait) seconds have elapsed.
+     *      This defaults to 1.1, and with default wait, 66 seconds.
+     *  SECONDARY_TIMEOUT - Secondary timeout multiplier. In cases where
+     *      Strophe can detect early failure, it will consider the request
+     *      failed if it doesn't return after
+     *      Math.floor(SECONDARY_TIMEOUT * wait) seconds have elapsed.
+     *      This defaults to 0.1, and with default wait, 6 seconds.
+     */
+    TIMEOUT: 1.1,
+    SECONDARY_TIMEOUT: 0.1,
+
 	/** Function connect 
 	 *  Connects to the server using Bosh
 	 */
@@ -279,9 +296,9 @@ Strophe.Bosh.prototype = {
 
         var time_elapsed = req.age();
         var primaryTimeout = (!isNaN(time_elapsed) &&
-                              time_elapsed > Math.floor(Strophe.TIMEOUT * this.wait));
+                              time_elapsed > Math.floor(Strophe.Bosh.TIMEOUT * this.wait));
         var secondaryTimeout = (req.dead !== null &&
-                                req.timeDead() > Math.floor(Strophe.SECONDARY_TIMEOUT * this.wait));
+                                req.timeDead() > Math.floor(Strophe.Bosh.SECONDARY_TIMEOUT * this.wait));
         var requestCompletedWithServerError = (req.xhr.readyState == 4 &&
                                                (reqStatus < 1 ||
                                                 reqStatus >= 500));
@@ -479,7 +496,7 @@ Strophe.Bosh.prototype = {
                 // completed request has been removed from the queue already
                 if (reqIs1 ||
                     (reqIs0 && this._requests.length > 0 &&
-                     this._requests[0].age() > Math.floor(Strophe.SECONDARY_TIMEOUT * this.wait))) {
+                     this._requests[0].age() > Math.floor(Strophe.Bosh.SECONDARY_TIMEOUT * this.wait))) {
                     this._restartRequest(0);
                 }
                 // call handler
