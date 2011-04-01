@@ -22,19 +22,20 @@ function rawOutput(data)
 function onConnect(status)
 {
     if (status == Strophe.Status.CONNECTING) {
-	log('Strophe is connecting.');
+		log('Strophe is connecting.');
     } else if (status == Strophe.Status.CONNFAIL) {
-	log('Strophe failed to connect.');
-	$('#connect').get(0).value = 'connect';
+		log('Strophe failed to connect.');
+		$('#connect').get(0).value = 'connect';
+	} else if(status == Strophe.Status.AUTHFAIL) {
+		log('Strophe couldn\'t authenticate.');
     } else if (status == Strophe.Status.DISCONNECTING) {
-	log('Strophe is disconnecting.');
+		log('Strophe is disconnecting.');
     } else if (status == Strophe.Status.DISCONNECTED) {
-	log('Strophe is disconnected.');
-	$('#connect').get(0).value = 'connect';
+		log('Strophe is disconnected.');
+		$('#connect').get(0).value = 'connect';
     } else if (status == Strophe.Status.CONNECTED) {
-	log('Strophe is connected.');
-	log('ECHOBOT: Send a message to ' + connection.jid + 
-	    ' to talk to me.');
+		log('Strophe is connected.');
+		log('ECHOBOT: Send a message to ' + connection.jid + ' to talk to me.');
 
 	connection.addHandler(onMessage, null, 'message', null, null,  null); 
 	connection.send($pres().tree());
@@ -65,7 +66,7 @@ function onMessage(msg) {
 
 $(document).ready(function () {
 	proto = new Strophe.Websocket(WS_SERVICE)
-	//proto = new Strophe.Bosh(BOSH_SERVICE)
+	// proto = new Strophe.Bosh(BOSH_SERVICE)
     connection = new Strophe.Connection({protocol:proto });
     connection.rawInput = rawInput;
     connection.rawOutput = rawOutput;

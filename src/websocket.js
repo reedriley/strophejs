@@ -43,26 +43,25 @@ Strophe.Websocket.prototype = {
 	 */
 	connect: function(connection) {
 		this.connection 		= connection;
-        this.socket 			= new WebSocket(this.service);
+        this.socket 			= new WebSocket(this.service, "xmpp");
 	    this.socket.onopen      = this._onOpen.bind(this);
 		this.socket.onerror 	= this._onError.bind(this);
 	    this.socket.onclose 	= this._onClose.bind(this);
 	    this.socket.onmessage 	= this._onMessage.bind(this);
-    
 	},
 	
 	/** Function disconnect 
 	 *  Disconnects from the server
 	 */
 	disconnect: function() {
-		
+		this.socket.close();
 	},
 
 	/** Function finish 
-	 *  Finishes the connection
+	 *  Finishes the connection. It's the last step in the cleanup process.
 	 */
 	finish: function() {
-		
+		this.socket = null; // Makes sure we delete the socket.
 	},
 	
 	/** Function send 
@@ -104,13 +103,19 @@ Strophe.Websocket.prototype = {
      *
 	 */
 	_onClose: function(event) {
-		console.log("CLOSED")
+		this.connection._doDisconnect()
 	},
 	
 	/** PrivateFunction: _onError
      *  _Private_ function to handle websockets messages.
      *
-     *  Parameters:
+	 *  This function parses each of the messages as if they are full documents. [TODO : We may actually want to use a SAX Push parser].
+	 *  
+	 *  Since all XMPP traffic starts with "<stream:stream version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' id='3697395463' from='SERVER'>"
+	 *  The first stanza will always fail to be parsed...
+	 *  Addtionnaly, the seconds stanza will always be a <stream:features> with the stream NS defined in the previous stanza... so we need to 'force' the inclusion of the NS in this stanza!
+     * 
+	 *  Parameters:
      *    (string) message - The websocket message.
      */
 	_onMessage: function(message) {
@@ -126,7 +131,7 @@ Strophe.Websocket.prototype = {
 			// Let's just skip this.
 		}
 		else {
-			this.connection._dataRecv(elem);
+			this.connection.receiveData(elem);
 		}
 	}
 	

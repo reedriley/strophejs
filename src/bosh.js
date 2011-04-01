@@ -238,10 +238,7 @@ Strophe.Bosh.prototype = {
 		// And now send the request.
 		request = new Strophe.Request(
 			body.tree(),
-			this._onRequestStateChange.bind(
-				this, 
-				this._dataRecv.bind(this)
-			),
+			this._onRequestStateChange.bind(this, this._dataRecv.bind(this)),
 			body.tree().getAttribute("rid")
 		);
 
@@ -250,8 +247,7 @@ Strophe.Bosh.prototype = {
 		}
     },
 
-    _processRequest: function(req)
-    {
+    _processRequest: function(req) {
         var reqStatus = -1;
 
         try {
@@ -395,12 +391,10 @@ Strophe.Bosh.prototype = {
             } else {
                 this.connection.changeConnectStatus(Strophe.Status.CONNFAIL, "unknown");
             }
-            // this.connection.disconnect();
             return;
         }
 		
-		// check to make sure we don't overwrite these if _connect_cb is
-	    // called multiple times in the case of missing stream:features
+		// check to make sure we don't overwrite these.
 	    if (!this.sid) {
 			this.sid = elem.getAttribute("sid");
 		}
@@ -418,8 +412,7 @@ Strophe.Bosh.prototype = {
         // send each incoming stanza back to the connection
         var that = this;
         Strophe.forEachChild(elem, null, function (child) {
-	
-			that.connection._dataRecv(child);
+			that.connection.receiveData(child);
         });
    
  	},
@@ -438,9 +431,7 @@ Strophe.Bosh.prototype = {
      *    (Strophe.Request) req - The request that is changing readyState.
      */
     _onRequestStateChange: function (func, req) {
-        Strophe.debug("request id " + req.id +
-                      "." + req.sends + " state changed to " +
-                      req.xhr.readyState);
+        Strophe.debug("request id " + req.id + "." + req.sends + " state changed to " + req.xhr.readyState);
 
         if (req.abort) {
             req.abort = false;
@@ -542,8 +533,7 @@ Strophe.Bosh.prototype = {
     _hitError: function (reqStatus)
     {
         this.errors++;
-        Strophe.warn("request errored, status: " + reqStatus +
-                     ", number of errors: " + this.errors);
+        Strophe.warn("request errored, status: " + reqStatus + ", number of errors: " + this.errors);
         if (this.errors > 4) {
             this._onDisconnectTimeout();
         }

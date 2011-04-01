@@ -12,7 +12,7 @@
     Strophe, $build, $msg, $iq, $pres */
 
 /** File: strophe.js
- *  A JavaScript library for XMPP BOSH.
+ *  A JavaScript library for XMPP.
  *
  *  This is the JavaScript version of the Strophe library.  Since JavaScript
  *  has no facilities for persistent TCP connections, this library uses
@@ -695,7 +695,7 @@ Strophe = {
      */
     log: function (level, msg)
     {
-		// console.log(level + " - " + msg)
+		console.log(level + " - " + msg)
         return;
     },
 
@@ -1910,15 +1910,14 @@ Strophe.Connection.prototype = {
         this.addHandlers = [];
     },
 
-    /** PrivateFunction: _dataRecv
-     *  _Private_ handler to processes incoming stanza from the protocol.
+    /** Function: receiveData
+     *  Handler to processes incoming stanza from the protocol layer. It should _not_ be called by the user.
      *
      *
      *  Parameters:
      *    (Strophe.Request) elem - The received stanza
      */
-    _dataRecv: function (elem)
-    {
+    receiveData: function (elem) {
 	    this.connected = true; // We're connected since we got data
         if (elem === null) { return; }
 
@@ -2355,6 +2354,7 @@ Strophe.Connection.prototype = {
             this._sasl_challenge_handler = null;
         }
 
+        this._doDisconnect();
         this.changeConnectStatus(Strophe.Status.AUTHFAIL, null);
         return false;
     },
