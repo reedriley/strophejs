@@ -54,9 +54,9 @@ Strophe.Websocket.prototype = {
 	 *  Disconnects from the server
 	 */
 	disconnect: function() {
+		this.socket.send(this._endStream())
 		this.connection.xmlOutput(this._endStream());
         this.connection.rawOutput(this._endStream());
-		this.socket.send(this._endStream())
 		this.socket.close(); // Close the socket
 	},
 
@@ -71,18 +71,18 @@ Strophe.Websocket.prototype = {
 	 *  Sends messages
 	 */
 	send: function(msg) {
+		this.socket.send(Strophe.serialize(msg));
 		this.connection.xmlOutput(msg);
         this.connection.rawOutput(Strophe.serialize(msg));
-		this.socket.send(Strophe.serialize(msg));
 	},
 	
 	/** Function: restart
      *  Send an xmpp:restart stanza.
      */
 	restart: function() {
+		this.socket.send(this._startStream());
 		this.connection.xmlOutput(this._startStream());
         this.connection.rawOutput(this._startStream());
-		this.socket.send(this._startStream());
 	},
 	
 	/** PrivateFunction: _onError
@@ -100,9 +100,9 @@ Strophe.Websocket.prototype = {
      *
      */
 	_onOpen: function() {
+		this.socket.send(this._startStream());
 		this.connection.xmlOutput(this._startStream());
         this.connection.rawOutput(this._startStream());
-		this.socket.send(this._startStream());
 	},
 	
 	/** PrivateFunction: _onClose
