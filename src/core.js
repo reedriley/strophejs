@@ -685,7 +685,7 @@ Strophe = {
      */
     log: function (level, msg)
     {
-		//console.log(level + " - " + msg)
+		console.log(level + " - " + msg)
         return;
     },
 
@@ -1307,6 +1307,7 @@ Strophe.Connection = function (service)
     this.disconnecting = false;
     this.connected = false;
 	this.status = null;
+	this._stanzas = [];
 
     this.errors = 0;
 
@@ -1315,6 +1316,9 @@ Strophe.Connection = function (service)
     this._sasl_success_handler = null;
     this._sasl_failure_handler = null;
     this._sasl_challenge_handler = null;
+    this._throttle_stanzas_handler = null;
+
+	this.max_stanzas_per_second = 10; // Traffic shaper at 10 stanzas per second, max.
 
     // initialize plugins
     for (var k in Strophe._connectionPlugins) {
@@ -1434,6 +1438,9 @@ Strophe.Connection.prototype = {
 
 		this.protocol.connect(this);
 		this.changeConnectStatus(Strophe.Status.CONNECTING, null);
+		
+		// Let's start the throttler.
+		this._throttleStanzas();
     },
 
 	/** Function start
@@ -1538,16 +1545,17 @@ Strophe.Connection.prototype = {
         if (typeof(elem.sort) === "function") {
             for (var i = 0; i < elem.length; i++) {
 				if (this._ensureDOMElement(elem[i])) {
-					this.protocol.send(elem[i])
+					this._stanzas.push(elem[i]);
 				}
             }
         } else if (typeof(elem.tree) === "function") {
 			if (this._ensureDOMElement(elem.tree())) {
-				this.protocol.send(elem.tree())
+				this._stanzas.push(elem.tree());
+				
 			}
         } else {
 			if (this._ensureDOMElement(elem)) {
-				this.protocol.send(elem)
+				this._stanzas.push(elem);
 			}
         }
     },
@@ -2372,6 +2380,25 @@ Strophe.Connection.prototype = {
         return false;
     },
 
+	/** PrivateFunction: _throttleStanzas
+	*  _Private_ function to throttle stanzas sent to the protocol.
+	*
+	*  Most servers will implement traffic shapers to ensure that a given client does 
+	*  not consume too many resources.
+	*  This function just picks stanza in the _stanzas FIFO and sends them to the 
+	*  protocol layer. The protocol layer may also very well implement a specific 
+	*  throttling, based on their needs.
+	* 
+	* 
+	* 
+	*/
+	_throttleStanzas: function () {
+		stanza = this._stanzas.shift();
+		if(stanza) {
+			this.protocol.send(stanza);
+		}
+		this._throttle_stanzas_handler = setTimeout(this._throttleStanzas.bind(this), 1000 * 1/this.max_stanzas_per_second); // 
+	}
 
 };
 

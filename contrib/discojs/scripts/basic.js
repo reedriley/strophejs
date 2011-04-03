@@ -1,4 +1,5 @@
 var BOSH_SERVICE = 'http://localhost:5280/bosh';
+var BWS_SERVICE = 'http://localhost:5288/ws-xmpp';
 
 var connection   = null;
 var browser      = null;
