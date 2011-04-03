@@ -685,7 +685,7 @@ Strophe = {
      */
     log: function (level, msg)
     {
-		console.log(level + " - " + msg)
+		//console.log(level + " - " + msg)
         return;
     },
 
@@ -1281,7 +1281,7 @@ Strophe.Connection = function (service)
 		this.protocol = service.protocol;
 	}
 	else {
-		console.log("Warning : this syntax will be deprecated to leave room for othe protocols. Please use new Strophe.Connection({protocol : new Strophe.Bosh(BOSH_SERVICE)})" )
+		console.log("Warning : this syntax will be deprecated to leave room for othe protocols. Please use new Strophe.Connection({proto : new Strophe.Bosh(BOSH_SERVICE)})" )
 	    /* The path to the httpbind service. */
 	    this.protocol = new Strophe.Bosh(service);
 	}
