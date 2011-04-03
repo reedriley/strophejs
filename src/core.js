@@ -1844,6 +1844,10 @@ Strophe.Connection.prototype = {
      *    (Strophe.Request) elem - The received stanza
      */
     receiveData: function (elem) {
+		var do_sasl_plain = false;
+		var do_sasl_digest_md5 = false;
+		var do_sasl_anonymous = false;
+		
 	    this.connected = true; // We're connected since we got data
         if (elem === null) { return; }
 
