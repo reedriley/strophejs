@@ -685,7 +685,6 @@ Strophe = {
      */
     log: function (level, msg)
     {
-		console.log(level + " - " + msg)
         return;
     },
 
@@ -2397,7 +2396,7 @@ Strophe.Connection.prototype = {
 		if(stanza) {
 			this.protocol.send(stanza);
 		}
-		this._throttle_stanzas_handler = setTimeout(this._throttleStanzas.bind(this), 1000 * 1/this.max_stanzas_per_second); // 
+		this._throttle_stanzas_handler = setTimeout(this._throttleStanzas.bind(this), 100 * 1/this.max_stanzas_per_second); // 
 	}
 
 };

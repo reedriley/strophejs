@@ -1,5 +1,5 @@
 var BOSH_SERVICE = 'http://zipline.local:5280/http-bind'
-var WS_SERVICE = 'ws://zipline.local:5288/ws-xmpp'
+var WS_SERVICE = 'ws://msgboy.com:5288/ws-xmpp'
 
 var connection = null;
 
